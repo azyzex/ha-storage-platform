@@ -1,0 +1,20 @@
+# Argo CD, trimmed for one machine: no Dex (SSO), no notifications, no ApplicationSet controller.
+# Served at http://localhost:8080/argocd through Traefik.
+dex: { enabled: false }
+notifications: { enabled: false }
+applicationSet: { replicas: 0 }
+configs:
+  params:
+    server.insecure: true          # TLS is terminated at the ingress in this lab
+    server.rootpath: /argocd
+    server.basehref: /argocd
+  cm:
+    timeout.reconciliation: 60s    # re-check Git every minute (live drift is detected immediately anyway)
+controller:
+  resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { memory: 768Mi } }
+server:
+  resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { memory: 256Mi } }
+repoServer:
+  resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { memory: 384Mi } }
+redis:
+  resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 128Mi } }

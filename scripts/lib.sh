@@ -13,8 +13,14 @@ declare -A NODE_IP=( [gluster-1]=172.28.0.11 [gluster-2]=172.28.0.12 [gluster-3]
 gl() { docker exec gluster-1 gluster --mode=script "$@"; }
 # Wait until self-heal has nothing pending on any brick (a file can exist on the returning
 # brick before its data is fully copied, so "file exists" is not "healed").
+# Uses "statistics heal-count" (reads the heal index counters) instead of "heal info", which walks every
+# pending entry and becomes very slow after thousands of writes during an outage.
+heal_pending_zero() {
+  local out
+  out=$(timeout 30 docker exec gluster-1 gluster --mode=script volume heal "$VOLUME" statistics heal-count 2>/dev/null) || return 1
+  [ "$(grep -c 'Number of entries: 0' <<<"$out")" -eq 3 ]
+}
 wait_healed() {
-  gl volume heal "$VOLUME" >/dev/null 2>&1 || true   # nudge the self-heal daemon
-  retry 90 2 bash -c "out=\$(docker exec gluster-1 gluster --mode=script volume heal $VOLUME info); \
-    [ \$(grep -c 'Number of entries: 0' <<<\"\$out\") -eq 3 ]"
+  timeout 30 docker exec gluster-1 gluster --mode=script volume heal "$VOLUME" >/dev/null 2>&1 || true  # nudge
+  retry 120 3 heal_pending_zero
 }

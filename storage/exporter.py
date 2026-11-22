@@ -66,7 +66,9 @@ def collect() -> None:
         pass
 
     try:
-        heal = gluster("volume", "heal", VOLUME, "info", timeout=30)
+        # heal-count reads the heal index counters; "heal info" walks every entry and gets very slow
+        # after many writes during an outage (found by the load + chaos test).
+        heal = gluster("volume", "heal", VOLUME, "statistics", "heal-count", timeout=20)
         for brick, entries in re.findall(r"Brick (\S+)\n(?:.*\n)*?Number of entries: (\d+|-)", heal):
             if entries.isdigit():
                 HEAL.labels(NODE, VOLUME, brick).set(int(entries))

@@ -3,7 +3,7 @@
 Read this first when resuming. Newest entries at the top.
 
 ## Current state
-- Slices 0, 1, 2 ✅ · Slice 3 (frontend) + 4 (DevSecOps) being validated · Slice 5 (observability) drafted (`storage/exporter.py`)
+- Slices 0–8 ✅ (all measured in CI) · Extras (Argo CD, Falco) being validated · Slice 9 (Codespaces) to test live
 - Repo: local `C:\Users\AZYZ\Desktop\projects\ha-storage-platform` → GitHub `azyzex/ha-storage-platform` (private)
 - Runs on: GitHub Actions (tests). Codespaces later (needs `gh auth refresh -h github.com -s codespace`, a browser step Aziz must do).
 - Aziz's PC has no Docker/WSL → nothing runs locally.
@@ -15,6 +15,9 @@ Read this first when resuming. Newest entries at the top.
 4. Confirm real months for the pentest + DiffServ projects on the CV (currently estimates: Oct 2026 / Nov 2026).
 
 ## Log
+- 2026-11-22 — **Slices 5b, 6, 7, 8 PASSED**: Loki+Alloy (131 log lines found); backup 11 s / restore after accidental delete 6 s; AIOps: 40 ms delay on one node → writes 10→294 ms, detector flagged in 49 s (z=74) while the 500 ms static alert stayed silent, cleared 66 s after; load: 7,436 req, 0.01% failed, p95 1.26 s, HPA 2→6 with gluster-3 killed 25 s mid-run.
+- 2026-11-22 — Bugs found by the tests: disk pressure evicting pods (CI now frees ~25 GB + lab eviction thresholds); backup NetworkPolicy created 1 s before the job (moved with the other policies + pg_isready wait); Garage 2.x layout check; `heal info` too slow after thousands of writes → `heal-count` in tests and exporter.
+- 2026-11-22 — Added Argo CD (GitOps self-heal test) and Falco (custom rule test) in a separate CI job; Codespaces devcontainer + Makefile + demo script.
 - 2026-11-22 — **Slice 1 PASSED** (run 45060920714): e2e on k3d. 10 MB upload/download identical; 3/3 replicas; gluster-3 stopped → file served in 0.07 s; API pod killed under load → **0/172 requests failed**; postgres-0 deleted → metadata intact.
 - 2026-11-22 — **Slice 2 PASSED** (Ansible): pool + volume built by `ansible/site.yml`; second run changed=0. Bug found: volume create raced peer propagation ("Host gluster-3 is not in 'Peer in Cluster' state") → now waits for full membership on every node.
 - 2026-11-22 — Test bug found: checksum compared mid self-heal → tests now wait for heal info = 0 entries.

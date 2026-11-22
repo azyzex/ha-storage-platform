@@ -1,0 +1,42 @@
+# The platform's desired state = the k8s/ folder of this Git repository. Argo CD keeps the cluster equal to it:
+# automated sync, prune (delete what was removed from Git) and selfHeal (revert manual changes).
+# __REPO__ and __REVISION__ are filled in by scripts/gitops-up.sh.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ha-storage
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: __REPO__
+    targetRevision: __REVISION__
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ha
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [RespectIgnoreDifferences=true]
+  # The HPA owns the API replica count; don't fight it.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: api
+      jsonPointers: [/spec/replicas]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd
+  namespace: argocd
+  annotations:
+    traefik.ingress.kubernetes.io/router.priority: "90"
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          - path: /argocd
+            pathType: Prefix
+            backend: { service: { name: argocd-server, port: { number: 80 } } }

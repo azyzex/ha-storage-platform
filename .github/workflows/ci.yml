@@ -142,3 +142,33 @@ jobs:
           kubectl -n ha describe pods || true
           kubectl -n ha logs deploy/api --tail=100 || true
           kubectl -n ha logs statefulset/postgres --tail=50 || true
+
+  gitops-runtime-security:
+    name: GitOps (Argo CD self-healing) + runtime security (Falco)
+    needs: [api-tests, storage-smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GITHUB_TOKEN: ${{ github.token }}      # lets Argo CD read this private repository
+    steps:
+      - uses: actions/checkout@v5
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && docker image prune -af >/dev/null
+      - name: Storage + platform
+        run: bash scripts/storage-up.sh && bash scripts/storage-mount.sh && bash scripts/cluster-up.sh
+      - name: Argo CD takes over k8s/ (GitOps)
+        run: bash scripts/gitops-up.sh
+      - name: GitOps self-healing test (manual changes reverted)
+        run: bash scripts/gitops-test.sh
+      - name: Falco (runtime security)
+        run: bash scripts/falco-up.sh
+      - name: Falco test (shell spawned in a container is detected)
+        run: bash scripts/falco-test.sh
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          uname -r; ls /sys/kernel/btf/vmlinux || true
+          kubectl -n argocd get application ha-storage -o yaml | sed -n '/status:/,$p' | head -60 || true
+          kubectl -n falco get pods -o wide || true
+          kubectl -n falco logs -l app.kubernetes.io/name=falco -c falco --tail=60 || true
+          kubectl get pods -A -o wide || true
