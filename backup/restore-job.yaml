@@ -1,0 +1,64 @@
+# Restore from the latest restic snapshot. Applied by scripts/restore-drill.sh with a unique name (__NAME__).
+#   1. restic restores the latest snapshot into a scratch volume
+#   2. the files are copied back onto the GlusterFS volume
+#   3. the database dump is replayed (it was taken with --clean, so it recreates the table)
+apiVersion: batch/v1
+kind: Job
+metadata: { name: __NAME__, namespace: ha }
+spec:
+  backoffLimit: 0
+  template:
+    metadata: { labels: { app: backup } }
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        - name: restic-restore
+          image: restic/restic:0.20.0
+          securityContext:
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          envFrom: [{ secretRef: { name: backup-restic } }]
+          env:
+            - { name: RESTIC_CACHE_DIR, value: /tmp/restic-cache }
+            - { name: HOME, value: /tmp }
+          command: ["sh", "-c", "restic -o s3.bucket-lookup=path restore latest --host ha-storage --target /restore && ls -l /restore/dump"]
+          resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { memory: 512Mi } }
+          volumeMounts:
+            - { name: restore, mountPath: /restore }
+            - { name: tmp, mountPath: /tmp }
+        - name: copy-files
+          image: restic/restic:0.20.0
+          securityContext:
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          command: ["sh", "-c", "cp -R /restore/data/. /data/ && echo files restored: $(ls /restore/data | wc -l)"]
+          resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { memory: 128Mi } }
+          volumeMounts:
+            - { name: restore, mountPath: /restore, readOnly: true }
+            - { name: files, mountPath: /data }
+      containers:
+        - name: replay-database
+          image: postgres:16-alpine
+          securityContext:
+            runAsUser: 70
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          env:
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: postgres-credentials, key: password } }
+          command: ["sh", "-c", "psql -v ON_ERROR_STOP=1 -q -h postgres -U storage storage < /restore/dump/storage.sql && echo database restored"]
+          resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { memory: 256Mi } }
+          volumeMounts: [{ name: restore, mountPath: /restore, readOnly: true }]
+      volumes:
+        - { name: restore, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+        - name: files
+          hostPath: { path: /mnt/gluster, type: Directory }

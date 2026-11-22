@@ -1,0 +1,79 @@
+# Nightly backup (also triggered on demand by the restore drill):
+#   1. pg_dump the metadata database (init container, as the postgres uid)
+#   2. restic backs up the dump + every file on the GlusterFS volume (read-only mount) to Garage (S3),
+#      encrypted with the restic password, then applies the retention policy.
+# No container runs as root; root filesystems are read-only.
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: backup, namespace: ha }
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata: { labels: { app: backup } }
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile: { type: RuntimeDefault }
+          initContainers:
+            - name: pg-dump
+              image: postgres:16-alpine
+              securityContext:
+                runAsUser: 70
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              env:
+                - name: PGPASSWORD
+                  valueFrom: { secretKeyRef: { name: postgres-credentials, key: password } }
+              command: ["sh", "-c", "pg_dump --clean --if-exists -h postgres -U storage storage > /dump/storage.sql && ls -l /dump"]
+              resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { memory: 256Mi } }
+              volumeMounts: [{ name: dump, mountPath: /dump }]
+          containers:
+            - name: restic
+              image: restic/restic:0.20.0
+              securityContext:
+                runAsUser: 10001
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              envFrom: [{ secretRef: { name: backup-restic } }]
+              env:
+                - { name: RESTIC_CACHE_DIR, value: /tmp/restic-cache }
+                - { name: HOME, value: /tmp }
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  restic -o s3.bucket-lookup=path cat config >/dev/null 2>&1 || restic -o s3.bucket-lookup=path init
+                  restic -o s3.bucket-lookup=path backup --host ha-storage --tag nightly --exclude '.probe-*' --exclude '.ready-*' --exclude '*.part' /dump /data
+                  restic -o s3.bucket-lookup=path forget --host ha-storage --keep-daily 7 --keep-weekly 4 --prune
+                  restic -o s3.bucket-lookup=path snapshots --compact
+              resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { memory: 512Mi } }
+              volumeMounts:
+                - { name: dump, mountPath: /dump, readOnly: true }
+                - { name: files, mountPath: /data, readOnly: true }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - { name: dump, emptyDir: {} }
+            - { name: tmp, emptyDir: {} }
+            - name: files
+              hostPath: { path: /mnt/gluster, type: Directory }
+---
+# The backup job may reach PostgreSQL (everything else stays default-deny).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: postgres-from-backup, namespace: ha }
+spec:
+  podSelector: { matchLabels: { app: postgres } }
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app: backup } } }]
+      ports: [{ protocol: TCP, port: 5432 }]

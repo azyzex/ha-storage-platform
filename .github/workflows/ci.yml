@@ -44,6 +44,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/src" "$TRIVY" config --quiet --exit-code 1 --severity HIGH,CRITICAL \
             --ignorefile /src/.trivyignore /src/k8s
+          docker run --rm -v "$PWD:/src" "$TRIVY" config --quiet --exit-code 1 --severity HIGH,CRITICAL             --ignorefile /src/.trivyignore /src/backup
 
   api-tests:
     name: API tests (real PostgreSQL)
@@ -83,10 +84,10 @@ jobs:
           for n in gluster-1 gluster-2 gluster-3; do echo "--- $n"; docker logs --tail 80 $n || true; done
 
   e2e:
-    name: Platform end-to-end (Kubernetes, failover, NetworkPolicy, observability)
+    name: Platform end-to-end (Kubernetes, failover, NetworkPolicy, observability, backups)
     needs: [api-tests, storage-smoke]
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v5
       - name: Storage layer
@@ -99,6 +100,10 @@ jobs:
         run: bash scripts/observability-up.sh
       - name: Observability test (alert on node failure)
         run: bash scripts/observability-test.sh
+      - name: Backups (Garage S3 + restic CronJob)
+        run: bash scripts/backup-up.sh
+      - name: Disaster-recovery drill (accidental delete -> restore)
+        run: bash scripts/restore-drill.sh
       - name: Diagnostics on failure
         if: failure()
         run: |
