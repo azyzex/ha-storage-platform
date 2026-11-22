@@ -32,9 +32,10 @@ jobs:
         run: |
           docker build -q -t ha-storage/api:local app/api
           docker build -q -t ha-storage/frontend:local app/frontend
+          docker build -q -t ha-storage/aiops-detector:local aiops
       - name: Trivy — images (fail on fixable CRITICAL vulnerabilities)
         run: |
-          for img in ha-storage/api:local ha-storage/frontend:local; do
+          for img in ha-storage/api:local ha-storage/frontend:local ha-storage/aiops-detector:local; do
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY" \
               image --quiet --exit-code 1 --severity CRITICAL --ignore-unfixed "$img"
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY" \
@@ -45,6 +46,18 @@ jobs:
           docker run --rm -v "$PWD:/src" "$TRIVY" config --quiet --exit-code 1 --severity HIGH,CRITICAL \
             --ignorefile /src/.trivyignore /src/k8s
           docker run --rm -v "$PWD:/src" "$TRIVY" config --quiet --exit-code 1 --severity HIGH,CRITICAL             --ignorefile /src/.trivyignore /src/backup
+
+  aiops-tests:
+    name: Anomaly detector unit tests
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: aiops } }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - run: pip install -q -r requirements.txt pytest==8.3.4 ruff==0.8.4 bandit==1.8.0
+      - run: ruff check . && bandit -q -r detector.py -ll
+      - run: python -m pytest -q tests
 
   api-tests:
     name: API tests (real PostgreSQL)
@@ -84,10 +97,10 @@ jobs:
           for n in gluster-1 gluster-2 gluster-3; do echo "--- $n"; docker logs --tail 80 $n || true; done
 
   e2e:
-    name: Platform end-to-end (Kubernetes, failover, NetworkPolicy, observability, backups)
-    needs: [api-tests, storage-smoke]
+    name: Platform end-to-end (Kubernetes, failover, NetworkPolicy, observability, backups, AIOps)
+    needs: [api-tests, storage-smoke, aiops-tests]
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v5
       - name: Storage layer
@@ -104,11 +117,16 @@ jobs:
         run: bash scripts/backup-up.sh
       - name: Disaster-recovery drill (accidental delete -> restore)
         run: bash scripts/restore-drill.sh
+      - name: AIOps anomaly detector
+        run: bash scripts/aiops-up.sh
+      - name: AIOps gray-failure test (slow node, not down)
+        run: bash scripts/aiops-test.sh
       - name: Diagnostics on failure
         if: failure()
         run: |
           free -m || true
           kubectl -n monitoring get pods -o wide || true
+          kubectl -n monitoring logs deploy/aiops-detector --tail=40 || true
           kubectl get all -A -o wide || true
           kubectl -n ha describe pods || true
           kubectl -n ha logs deploy/api --tail=100 || true

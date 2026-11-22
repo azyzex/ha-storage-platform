@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiops-detector
+  namespace: monitoring
+  labels: { app: aiops-detector }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: aiops-detector } }
+  template:
+    metadata: { labels: { app: aiops-detector } }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: detector
+          image: ha-storage/aiops-detector:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: PROMETHEUS_URL, value: "http://kps-prometheus.monitoring:9090" }
+            - { name: STEP_SECONDS, value: "15" }
+          ports: [{ containerPort: 9100, name: metrics }]
+          readinessProbe: { httpGet: { path: /, port: metrics }, periodSeconds: 10 }
+          resources:
+            requests: { cpu: 20m, memory: 96Mi }
+            limits: { cpu: 500m, memory: 384Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: aiops-detector, namespace: monitoring, labels: { app: aiops-detector } }
+spec:
+  selector: { app: aiops-detector }
+  ports: [{ name: metrics, port: 9100, targetPort: metrics }]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: { name: aiops-detector, namespace: monitoring }
+spec:
+  selector: { matchLabels: { app: aiops-detector } }
+  endpoints: [{ port: metrics, interval: 15s }]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata: { name: aiops, namespace: monitoring }
+spec:
+  groups:
+    - name: aiops
+      rules:
+        - alert: StorageAnomalyDetected
+          expr: max(aiops_anomaly) == 1
+          for: 30s
+          labels: { severity: warning }
+          annotations:
+            summary: "Storage behaviour deviates from its learned baseline"
+            description: >-
+              The Isolation Forest flags the latest samples as abnormal. Check aiops_feature_zscore to see which
+              signal moved (write/read latency, heal backlog, offline bricks). Catches slow-but-alive nodes that
+              static thresholds miss.
