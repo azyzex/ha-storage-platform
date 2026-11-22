@@ -16,12 +16,19 @@ ansible-galaxy collection list community.docker >/dev/null 2>&1 \
 
 log "Configuring the cluster with Ansible"
 cd "$REPO_ROOT/ansible"
-ansible-playbook site.yml
+# Pass the inventory and settings explicitly: Ansible ignores an ansible.cfg found in a world-writable
+# directory (the Codespaces workspace is one), which silently left it with no hosts at all.
+export ANSIBLE_CONFIG="$REPO_ROOT/ansible/ansible.cfg" ANSIBLE_HOST_KEY_CHECKING=False        ANSIBLE_PYTHON_INTERPRETER=/usr/bin/python3 ANSIBLE_RETRY_FILES_ENABLED=False
+play() { ansible-playbook -i "$REPO_ROOT/ansible/inventory.ini" "$REPO_ROOT/ansible/site.yml" "$@"; }
+[ "$(ansible-inventory -i "$REPO_ROOT/ansible/inventory.ini" --list | jq '.gluster.hosts | length')" = "3" ]   || fail "Ansible inventory does not resolve the 3 GlusterFS nodes"
+out=$(play) || { echo "$out"; fail "playbook failed"; }
+echo "$out" | sed -n '/PLAY RECAP/,$p'
+echo "$out" | grep -q "no hosts matched" && { echo "$out"; fail "a play matched no hosts"; }
 ok "pool formed and volume '$VOLUME' started"
 
 if [ "${1:-}" = "--check-idempotent" ]; then
   log "Idempotency check: second run must change nothing"
-  out=$(ansible-playbook site.yml)
+  out=$(play)
   echo "$out" | sed -n '/PLAY RECAP/,$p'
   if echo "$out" | sed -n '/PLAY RECAP/,$p' | grep -Eq 'changed=[1-9]'; then
     fail "playbook is not idempotent"
