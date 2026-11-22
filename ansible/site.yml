@@ -33,15 +33,28 @@
       register: probe
       changed_when: "'success' in probe.stdout"
 
-    - name: Wait until every peer is connected
-      ansible.builtin.shell: set -o pipefail && gluster --mode=script pool list | grep -c Connected
+# Peer membership propagates between nodes a moment after the probe. Creating the volume too early fails with
+# "Staging failed on gluster-2: Host gluster-3 is not in 'Peer in Cluster' state", so every node must see
+# every other node as a full member first.
+- name: Wait until every node sees all peers as full members
+  hosts: gluster
+  gather_facts: false
+  tasks:
+    - name: Peer in Cluster (Connected) on this node
+      ansible.builtin.shell: set -o pipefail && gluster --mode=script peer status | grep -c 'Peer in Cluster (Connected)'
       args: { executable: /bin/bash }
-      register: connected
+      register: members
       retries: 30
       delay: 2
-      until: connected.stdout | int == groups['gluster'] | length
+      until: members.stdout | int == (groups['gluster'] | length) - 1
       changed_when: false
 
+- name: Create, tune and start the volume (run from the first node)
+  hosts: gluster[0]
+  gather_facts: false
+  vars:
+    bricks: "{{ groups['gluster'] | map('regex_replace', '$', ':' ~ gluster_brick_root ~ '/' ~ gluster_volume) | join(' ') }}"
+  tasks:
     - name: Does the volume exist?
       ansible.builtin.command: gluster --mode=script volume info {{ gluster_volume }}
       register: vol_info
