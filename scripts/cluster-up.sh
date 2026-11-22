@@ -16,10 +16,15 @@ command -v kubectl >/dev/null || fail "kubectl not installed"
 
 if ! k3d cluster list "$CLUSTER" >/dev/null 2>&1; then
   log "Creating k3d cluster '$CLUSTER' (1 server + 2 agents)"
+  # The 3 k3d nodes share ONE host disk. Default kubelet eviction (nodefs/imagefs < 10-15% free) evicts pods
+  # on a busy single machine (CI runner, Codespace) long before space really runs out, so set explicit,
+  # lab-appropriate thresholds.
   k3d cluster create "$CLUSTER" \
     --agents 2 \
     --port "8080:80@loadbalancer" \
     --volume "$MOUNT:$MOUNT@all" \
+    --k3s-arg "--kubelet-arg=eviction-hard=memory.available<200Mi,nodefs.available<3%,imagefs.available<3%@server:*;agent:*" \
+    --k3s-arg "--kubelet-arg=eviction-minimum-reclaim=nodefs.available=500Mi,imagefs.available=500Mi@server:*;agent:*" \
     --wait --timeout 180s
 fi
 kubectl config use-context "k3d-$CLUSTER" >/dev/null

@@ -97,12 +97,18 @@ jobs:
           for n in gluster-1 gluster-2 gluster-3; do echo "--- $n"; docker logs --tail 80 $n || true; done
 
   e2e:
-    name: Platform end-to-end (Kubernetes, failover, NetworkPolicy, observability, backups, AIOps)
+    name: Platform end-to-end (Kubernetes, failover, NetworkPolicy, observability, backups, AIOps, load)
     needs: [api-tests, storage-smoke, aiops-tests]
     runs-on: ubuntu-24.04
-    timeout-minutes: 70
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@v5
+      - name: Free disk space (runner ships ~25 GB of unused toolchains)
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          docker image prune -af >/dev/null
+          df -h /
       - name: Storage layer
         run: bash scripts/storage-up.sh && bash scripts/storage-mount.sh
       - name: k3d cluster + deploy
@@ -121,12 +127,17 @@ jobs:
         run: bash scripts/aiops-up.sh
       - name: AIOps gray-failure test (slow node, not down)
         run: bash scripts/aiops-test.sh
+      - name: Load test + chaos (k6, HPA autoscaling, node killed under load)
+        run: bash scripts/load-test.sh
       - name: Diagnostics on failure
         if: failure()
         run: |
           free -m || true
+          df -h / || true
+          kubectl describe nodes | grep -A8 "Conditions:" || true
           kubectl -n monitoring get pods -o wide || true
           kubectl -n monitoring logs deploy/aiops-detector --tail=40 || true
+          kubectl -n ha get hpa -o wide || true
           kubectl get all -A -o wide || true
           kubectl -n ha describe pods || true
           kubectl -n ha logs deploy/api --tail=100 || true

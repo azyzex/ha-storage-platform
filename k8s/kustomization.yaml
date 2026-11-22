@@ -6,4 +6,5 @@ resources:
   - api.yaml
   - frontend.yaml
   - networkpolicy.yaml
+  - hpa.yaml
   - ingress.yaml
