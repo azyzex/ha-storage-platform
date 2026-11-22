@@ -12,7 +12,7 @@ if ! command -v ansible-playbook >/dev/null; then
   export PATH="$HOME/.local/bin:$PATH"
 fi
 ansible-galaxy collection list community.docker >/dev/null 2>&1 \
-  || ansible-galaxy collection install -q community.docker
+  || ansible-galaxy collection install community.docker >/dev/null
 
 log "Configuring the cluster with Ansible"
 cd "$REPO_ROOT/ansible"
