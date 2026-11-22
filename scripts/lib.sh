@@ -11,3 +11,10 @@ MOUNT=/mnt/gluster
 NODES=(gluster-1 gluster-2 gluster-3)
 declare -A NODE_IP=( [gluster-1]=172.28.0.11 [gluster-2]=172.28.0.12 [gluster-3]=172.28.0.13 )
 gl() { docker exec gluster-1 gluster --mode=script "$@"; }
+# Wait until self-heal has nothing pending on any brick (a file can exist on the returning
+# brick before its data is fully copied, so "file exists" is not "healed").
+wait_healed() {
+  gl volume heal "$VOLUME" >/dev/null 2>&1 || true   # nudge the self-heal daemon
+  retry 90 2 bash -c "out=\$(docker exec gluster-1 gluster --mode=script volume heal $VOLUME info); \
+    [ \$(grep -c 'Number of entries: 0' <<<\"\$out\") -eq 3 ]"
+}

@@ -29,13 +29,14 @@ ok "write accepted with 2 of 3 nodes"
 
 log "4. Bring gluster-2 back and wait for self-heal"
 docker start gluster-2 >/dev/null
-retry 60 2 docker exec gluster-2 test -f "/bricks/$VOLUME/$(basename "$f2")" || {
-  gl volume heal "$VOLUME" info; fail "gluster-2 did not heal the file written during its outage"; }
+retry 60 2 docker exec gluster-2 test -f "/bricks/$VOLUME/$(basename "$f2")" || fail "gluster-2 never saw the new file"
+t_heal=$(date +%s)
+wait_healed || { gl volume heal "$VOLUME" info; fail "self-heal did not finish"; }
+t_heal=$(( $(date +%s) - t_heal ))
 got2=$(docker exec gluster-2 sha256sum "/bricks/$VOLUME/$(basename "$f2")" | cut -d' ' -f1)
 [ "$got2" = "$sum2" ] || fail "healed copy on gluster-2 differs"
-ok "gluster-2 healed: missing file copied back, checksum identical"
+ok "gluster-2 healed: missing file copied back, checksum identical (heal finished in ~${t_heal}s)"
 
-retry 30 2 bash -c "docker exec gluster-1 gluster --mode=script volume heal $VOLUME info | grep -q 'Number of entries: 0'" || true
 gl volume heal "$VOLUME" info | grep -E 'Brick|Number of entries'
 
 log "Storage smoke test PASSED"
