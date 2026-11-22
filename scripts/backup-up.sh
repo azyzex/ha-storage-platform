@@ -13,13 +13,19 @@ kubectl -n backup rollout status statefulset/garage --timeout=180s
 G() { kubectl -n backup exec garage-0 -- /garage "$@"; }
 retry 30 2 G status >/dev/null || fail "garage CLI not answering"
 
-if G layout show 2>/dev/null | grep -q "No nodes currently have a role"; then
+# A fresh Garage node has layout version 0 (no role). Detect that from the version number rather than
+# from a sentence in the output, which changes between Garage releases.
+layout_version=$(G layout show 2>/dev/null | grep -i "current cluster layout version" | grep -o '[0-9]\+' | head -1)
+if [ "${layout_version:-0}" = "0" ]; then
   log "Assigning the storage layout"
   node_id=$(G node id -q | cut -d@ -f1)
-  G layout assign -z dc1 -c 4G "$node_id" >/dev/null
-  G layout apply --version 1 >/dev/null
+  G layout assign -z dc1 -c 4G "$node_id"
+  G layout apply --version 1
 fi
-G key info backup-key >/dev/null 2>&1 || G key create backup-key >/dev/null
+G layout show | head -12
+# The layout propagates asynchronously; key creation fails with "Layout not ready" until it has.
+G key info backup-key >/dev/null 2>&1 || retry 30 2 G key create backup-key >/dev/null \
+  || fail "could not create the Garage key (layout never became ready)"
 G bucket info backups >/dev/null 2>&1 || G bucket create backups >/dev/null
 G bucket allow --read --write --owner backups --key backup-key >/dev/null
 info=$(G key info backup-key --show-secret)
