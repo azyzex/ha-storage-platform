@@ -44,7 +44,8 @@ head -c 3M /dev/urandom > "$WORK/b.bin"
 id_b=$(upload "$WORK/b.bin" | jq -r .id)
 note "gluster-3 stopped" "file still served (${t_read}s), new upload accepted"
 docker start gluster-3 >/dev/null
-retry 60 2 docker exec gluster-3 test -f "/bricks/$VOLUME/$id_b" || fail "gluster-3 did not self-heal"
+wait_healed || fail "gluster-3 did not finish self-heal"
+[ "$(docker exec gluster-3 sha256sum "/bricks/$VOLUME/$id_b" | cut -d' ' -f1)" = "$(sha256sum "$WORK/b.bin" | cut -d' ' -f1)" ]   || fail "healed copy on gluster-3 differs"
 note "gluster-3 back" "self-healed the file written during its outage"
 
 log "4. App pod failure while traffic is flowing"
@@ -69,6 +70,20 @@ kubectl -n ha rollout status statefulset/postgres --timeout=180s >/dev/null
 retry 60 2 bash -c "curl -fsS $API/files | jq -e '.[] | select(.id==\"$id_a\")' >/dev/null" || fail "metadata lost after DB restart"
 [ "$(download_sha "$id_a")" = "$sha_a" ] || fail "download differs after DB restart"
 note "postgres-0 deleted" "metadata intact after restart"
+
+log "6. NetworkPolicy: only the API may reach PostgreSQL"
+probe_db() {  # probe_db <pod-name> <label> -> REACHABLE / BLOCKED
+  kubectl -n ha run "$1" --image=busybox:1.36 --restart=Never --labels "app=$2" --command -- \
+    sh -c 'nc -w 3 postgres 5432 </dev/null && echo REACHABLE || echo BLOCKED' >/dev/null
+  kubectl -n ha wait --for=jsonpath='{.status.phase}'=Succeeded "pod/$1" --timeout=90s >/dev/null
+  kubectl -n ha logs "$1" | tail -1
+  kubectl -n ha delete pod "$1" --wait=false >/dev/null
+}
+intruder=$(probe_db netcheck-intruder intruder)
+[ "$intruder" = "BLOCKED" ] || fail "a random pod could reach PostgreSQL ($intruder)"
+allowed=$(probe_db netcheck-api api)
+[ "$allowed" = "REACHABLE" ] || fail "a pod labelled app=api could not reach PostgreSQL ($allowed)"
+note "NetworkPolicy" "random pod BLOCKED from PostgreSQL, app=api pod allowed"
 
 {
   echo "## End-to-end results"

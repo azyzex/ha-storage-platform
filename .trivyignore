@@ -1,0 +1,2 @@
+# Accepted risks for Trivy config scans, each with the reason. Review when the architecture changes.
+# (empty for now: findings are fixed in the manifests rather than ignored)

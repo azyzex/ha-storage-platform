@@ -5,4 +5,5 @@ resources:
   - postgres.yaml
   - api.yaml
   - frontend.yaml
+  - networkpolicy.yaml
   - ingress.yaml

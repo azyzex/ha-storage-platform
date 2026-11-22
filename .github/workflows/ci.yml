@@ -18,6 +18,33 @@ jobs:
       - name: Bandit (Python security issues, medium+ severity fails the build)
         run: bandit -r app -ll
 
+  security:
+    name: DevSecOps gates (gitleaks, Trivy images + Kubernetes config)
+    runs-on: ubuntu-24.04
+    env:
+      TRIVY: aquasec/trivy:0.58.1
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }          # scan the whole Git history for leaked secrets
+      - name: gitleaks — no secrets in any commit
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.21.2 git /repo --redact --verbose
+      - name: Build images
+        run: |
+          docker build -q -t ha-storage/api:local app/api
+          docker build -q -t ha-storage/frontend:local app/frontend
+      - name: Trivy — images (fail on fixable CRITICAL vulnerabilities)
+        run: |
+          for img in ha-storage/api:local ha-storage/frontend:local; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY" \
+              image --quiet --exit-code 1 --severity CRITICAL --ignore-unfixed "$img"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY" \
+              image --quiet --exit-code 0 --severity HIGH,CRITICAL --format table "$img" | tail -n 25
+          done
+      - name: Trivy — Kubernetes manifests (fail on HIGH/CRITICAL misconfigurations)
+        run: |
+          docker run --rm -v "$PWD:/src" "$TRIVY" config --quiet --exit-code 1 --severity HIGH,CRITICAL \
+            --ignorefile /src/.trivyignore /src/k8s
+
   api-tests:
     name: API tests (real PostgreSQL)
     runs-on: ubuntu-24.04
