@@ -50,18 +50,25 @@ def collect() -> None:
         UP.labels(NODE).set(0)
         return
 
+    bricks: list[str] = []
     try:
         info = gluster("volume", "info", VOLUME)
         STARTED.labels(NODE, VOLUME).set(1 if "Status: Started" in info else 0)
+        bricks = re.findall(r"^Brick\d+: (\S+)$", info, re.M)
     except Exception:
         STARTED.labels(NODE, VOLUME).set(0)
 
     try:
+        online = set()
         root = ET.fromstring(gluster("--xml", "volume", "status", VOLUME))  # nosec B314 - trusted local CLI output
         for node in root.iter("node"):
             host, path = node.findtext("hostname"), node.findtext("path")
-            if path and path.startswith("/"):
-                BRICK_UP.labels(NODE, VOLUME, f"{host}:{path}").set(1 if node.findtext("status") == "1" else 0)
+            if path and path.startswith("/") and node.findtext("status") == "1":
+                online.add(f"{host}:{path}")
+        # "volume status" silently omits the bricks of a disconnected peer, so judge every brick the volume is
+        # configured with (from "volume info"); otherwise a dead brick keeps its last value (1) forever.
+        for brick in bricks or sorted(online):
+            BRICK_UP.labels(NODE, VOLUME, brick).set(1 if brick in online else 0)
     except Exception:
         pass
 

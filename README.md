@@ -54,6 +54,16 @@ flowchart TB
 
 *Lab scale: all nodes are containers on one cloud machine. It demonstrates replication, failover, self-healing and the operations around them, not a multi-region production system.*
 
+## Screenshots (live system, captured by `scripts/capture-screenshots.py`)
+
+| | |
+|---|---|
+| ![Web app](docs/img/01-web-app.png) **Web app**: upload/download, SHA-256 per file, which API pod answered | ![Argo CD](docs/img/05-argocd.png) **Argo CD**: the platform deployed from Git, Synced/Healthy |
+| ![Healthy](docs/img/02-grafana-healthy.png) **Grafana, healthy**: 3 nodes, 3 bricks, storage latency, AIOps score | ![Node down](docs/img/03-grafana-node-down.png) **Grafana, gluster-2 stopped**: 2/3 nodes and bricks, heal backlog growing, anomaly flagged |
+
+![Alerts firing](docs/img/04-alert-firing.png)
+**Alerts during the failure**: GlusterNodeDown, GlusterBrickDown and the AIOps StorageAnomalyDetected fire together.
+
 ## What's inside
 
 | Area | Tools |

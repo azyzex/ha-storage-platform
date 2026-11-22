@@ -13,6 +13,7 @@ retry 30 1 curl -fsS http://localhost:9090/-/ready >/dev/null || fail "Prometheu
 
 q() { curl -fsG http://localhost:9090/api/v1/query --data-urlencode "query=$1" | jq -r '.data.result[0].value[1] // "0"'; }
 firing() { q "count(ALERTS{alertname=\"$1\",alertstate=\"firing\"}) or vector(0)"; }
+export -f q firing
 
 log "1. Scrape targets"
 retry 60 5 bash -c '[ "$(curl -fsG http://localhost:9090/api/v1/query --data-urlencode "query=sum(up{job=\"gluster\"})" | jq -r ".data.result[0].value[1] // 0")" = "3" ]' \
@@ -38,7 +39,8 @@ note "GlusterNodeDown" "fired ${detect}s after the node was stopped (rule: for 2
 retry 20 3 bash -c 'curl -fsS http://localhost:9093/api/v2/alerts | jq -e "any(.[]; .labels.alertname == \"GlusterNodeDown\")" >/dev/null' \
   || fail "alert did not reach Alertmanager"
 note "Alertmanager" "received GlusterNodeDown (ready to route to email/Slack/Telegram)"
-[ "$(firing GlusterBrickDown)" != "0" ] && note "GlusterBrickDown" "also firing (surviving nodes report the brick offline)" || true
+retry 30 3 bash -c '[ "$(firing GlusterBrickDown)" != "0" ]'   || fail "GlusterBrickDown did not fire: the surviving nodes still report gluster-2's brick online"
+note "GlusterBrickDown" "firing too: the surviving nodes report gluster-2's brick offline"
 
 log "3. Bring gluster-2 back and wait for the alert to resolve"
 docker start gluster-2 >/dev/null
