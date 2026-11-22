@@ -1,0 +1,14 @@
+# Traefik (bundled with k3s) routes /api to the API. The frontend will be added on "/" in slice 3.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: ha
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend: { service: { name: api, port: { number: 8000 } } }
