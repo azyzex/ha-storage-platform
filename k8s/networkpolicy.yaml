@@ -22,7 +22,19 @@ spec:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
           podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
 ---
-# 3. Only the API may reach PostgreSQL, and only on 5432.
+# 3. Prometheus (namespace "monitoring") may scrape the API metrics.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-prometheus-scrape, namespace: ha }
+spec:
+  podSelector: { matchLabels: { app: api } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+# 4. Only the API may reach PostgreSQL, and only on 5432.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: postgres-from-api-only, namespace: ha }

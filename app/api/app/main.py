@@ -15,13 +15,17 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from . import db
 from .config import CHUNK, DATA_DIR, MAX_UPLOAD_BYTES
+from .probe import Prober
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     db.init()
+    prober = Prober(DATA_DIR, float(os.environ.get("PROBE_INTERVAL", "5")))
+    prober.start()
     yield
+    prober.stop()
     db.pool.close()
 
 

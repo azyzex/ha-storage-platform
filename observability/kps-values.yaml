@@ -1,0 +1,66 @@
+# kube-prometheus-stack, sized for a single cloud machine. Names are fixed with fullnameOverride so scripts
+# can rely on them: kps-prometheus, kps-alertmanager, kps-grafana.
+fullnameOverride: kps
+
+# k3s runs these control-plane components inside the k3s binary; scraping them separately only creates
+# failing targets and false alerts.
+kubeEtcd: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeControllerManager: { enabled: false }
+kubeProxy: { enabled: false }
+
+prometheus:
+  prometheusSpec:
+    retention: 2d
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    # pick up every ServiceMonitor / PrometheusRule, not only the ones labelled with the Helm release
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { memory: 1Gi }
+    # The GlusterFS nodes are containers outside Kubernetes; k3d makes the host reachable as host.k3d.internal.
+    additionalScrapeConfigs:
+      - job_name: gluster
+        scrape_interval: 10s
+        static_configs:
+          - targets: ["host.k3d.internal:9711", "host.k3d.internal:9712", "host.k3d.internal:9713"]
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 20m, memory: 32Mi }
+      limits: { memory: 128Mi }
+
+grafana:
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
+      serve_from_sub_path: true
+  sidecar:
+    dashboards: { enabled: true, label: grafana_dashboard, searchNamespace: ALL }
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      url: http://loki.monitoring:3100
+      access: proxy
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 384Mi }
+
+prometheus-node-exporter:
+  resources:
+    requests: { cpu: 10m, memory: 24Mi }
+    limits: { memory: 64Mi }
+
+kube-state-metrics:
+  resources:
+    requests: { cpu: 10m, memory: 48Mi }
+    limits: { memory: 128Mi }

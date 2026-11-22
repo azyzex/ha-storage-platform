@@ -1,0 +1,72 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ha-storage
+  namespace: monitoring
+spec:
+  groups:
+    - name: glusterfs
+      rules:
+        - alert: GlusterNodeDown
+          expr: up{job="gluster"} == 0
+          for: 20s
+          labels: { severity: critical }
+          annotations:
+            summary: "GlusterFS node {{ $labels.instance }} is unreachable"
+            description: "Its exporter stopped answering: the node is down or partitioned. Replica 3 keeps the data available with 2 nodes, but there is no spare left."
+        - alert: GlusterBrickDown
+          expr: min by (brick) (gluster_brick_up) == 0
+          for: 30s
+          labels: { severity: critical }
+          annotations:
+            summary: "Brick {{ $labels.brick }} is offline according to the surviving nodes"
+        - alert: GlusterPeerMissing
+          expr: gluster_peers_connected < 2
+          for: 1m
+          labels: { severity: warning }
+          annotations:
+            summary: "Node {{ $labels.node }} sees only {{ $value }} connected peer(s) out of 2"
+        - alert: GlusterHealBacklog
+          expr: max by (brick) (gluster_heal_pending_entries) > 0
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $value }} entries waiting for self-heal on {{ $labels.brick }} for 10 minutes"
+        - alert: GlusterBrickFillingUp
+          expr: min by (brick) (gluster_brick_free_bytes) < 1e9
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "Less than 1 GB free on {{ $labels.brick }}"
+
+    - name: storage-experience
+      rules:
+        - alert: StorageProbeSlow
+          expr: histogram_quantile(0.95, sum by (le, op) (rate(storage_probe_seconds_bucket[2m]))) > 0.5
+          for: 2m
+          labels: { severity: warning }
+          annotations:
+            summary: "p95 storage {{ $labels.op }} latency seen by the API is {{ $value | humanizeDuration }}"
+        - alert: StorageProbeFailing
+          expr: sum by (op) (increase(storage_probe_failures_total[2m])) > 0
+          for: 1m
+          labels: { severity: critical }
+          annotations:
+            summary: "API pods cannot {{ $labels.op }} the storage volume"
+
+    - name: api
+      rules:
+        - alert: ApiDown
+          expr: sum(up{job="api"}) < 1 or absent(up{job="api"})
+          for: 1m
+          labels: { severity: critical }
+          annotations:
+            summary: "No API pod is being scraped successfully"
+        - alert: ApiHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{job="api", status="5xx"}[5m]))
+              / clamp_min(sum(rate(http_requests_total{job="api"}[5m])), 1e-9) > 0.05
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "More than 5% of API requests fail ({{ $value | humanizePercentage }})"

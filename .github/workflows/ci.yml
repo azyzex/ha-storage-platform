@@ -83,10 +83,10 @@ jobs:
           for n in gluster-1 gluster-2 gluster-3; do echo "--- $n"; docker logs --tail 80 $n || true; done
 
   e2e:
-    name: Slice 1 — Kubernetes platform end-to-end
+    name: Platform end-to-end (Kubernetes, failover, NetworkPolicy, observability)
     needs: [api-tests, storage-smoke]
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - name: Storage layer
@@ -95,9 +95,15 @@ jobs:
         run: bash scripts/cluster-up.sh
       - name: End-to-end failover test
         run: bash scripts/e2e.sh
+      - name: Observability stack (Prometheus, Grafana, Alertmanager)
+        run: bash scripts/observability-up.sh
+      - name: Observability test (alert on node failure)
+        run: bash scripts/observability-test.sh
       - name: Diagnostics on failure
         if: failure()
         run: |
+          free -m || true
+          kubectl -n monitoring get pods -o wide || true
           kubectl get all -A -o wide || true
           kubectl -n ha describe pods || true
           kubectl -n ha logs deploy/api --tail=100 || true

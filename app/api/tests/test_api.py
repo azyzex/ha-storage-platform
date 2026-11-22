@@ -37,6 +37,19 @@ def test_filename_is_sanitized(client):
     assert r.json()["name"] == "passwd"
 
 
+def test_storage_probe_records_latency(tmp_path):
+    from app.probe import PROBE, probe_once
+    before = PROBE.labels("write")._sum.get()
+    probe_once(tmp_path)
+    assert PROBE.labels("write")._sum.get() > before
+    assert not any(tmp_path.iterdir())  # probe file cleaned up
+
+
+def test_metrics_endpoint(client):
+    body = client.get("/metrics").text
+    assert "storage_probe_seconds" in body and "http_requests_total" in body
+
+
 def test_delete_and_404(client):
     meta = client.post("/api/files", files={"file": ("a.txt", b"hello", "text/plain")}).json()
     assert client.delete(f"/api/files/{meta['id']}").status_code == 204

@@ -11,18 +11,21 @@ services:
     hostname: gluster-1
     container_name: gluster-1
     volumes: [brick1:/bricks, state1:/var/lib/glusterd]
+    ports: ["9711:9713"]   # exporter metrics, scraped by Prometheus
     networks: { gluster: { ipv4_address: 172.28.0.11 } }
   gluster-2:
     <<: *node
     hostname: gluster-2
     container_name: gluster-2
     volumes: [brick2:/bricks, state2:/var/lib/glusterd]
+    ports: ["9712:9713"]   # exporter metrics, scraped by Prometheus
     networks: { gluster: { ipv4_address: 172.28.0.12 } }
   gluster-3:
     <<: *node
     hostname: gluster-3
     container_name: gluster-3
     volumes: [brick3:/bricks, state3:/var/lib/glusterd]
+    ports: ["9713:9713"]   # exporter metrics, scraped by Prometheus
     networks: { gluster: { ipv4_address: 172.28.0.13 } }
 networks:
   gluster:
