@@ -16,6 +16,13 @@ helm upgrade --install kps prometheus-community/kube-prometheus-stack -n monitor
   -f "$OBS/kps-values.yaml" --wait --timeout 12m
 helm -n monitoring list -o json | jq -r '.[] | "chart: \(.chart)  app: \(.app_version)"'
 
+log "Installing Loki (log store) + Grafana Alloy (log collector)"
+helm repo add grafana https://grafana.github.io/helm-charts >/dev/null 2>&1 || true
+helm repo update grafana >/dev/null
+helm upgrade --install loki grafana/loki -n monitoring -f "$OBS/loki-values.yaml" --wait --timeout 8m
+helm upgrade --install alloy grafana/alloy -n monitoring -f "$OBS/alloy-values.yaml" --wait --timeout 5m
+helm -n monitoring list -o json | jq -r '.[] | "\(.name): \(.chart)"'
+
 log "Alert rules, API scraping, Grafana ingress and dashboard"
 kubectl apply -f "$OBS/alerts.yaml" -f "$OBS/api-monitoring.yaml"
 kubectl -n monitoring create configmap ha-storage-dashboard \

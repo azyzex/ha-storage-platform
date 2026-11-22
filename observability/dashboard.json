@@ -502,6 +502,37 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "id": 11,
+      "type": "logs",
+      "title": "API logs (Loki) \u2014 errors and warnings first",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{namespace=\"ha\", app=\"api\"} != \"GET /api/healthz\" != \"GET /api/readyz\""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      }
     }
   ]
 }
