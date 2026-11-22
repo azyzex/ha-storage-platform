@@ -1,0 +1,79 @@
+# Builds the GlusterFS trusted pool and the replicated volume.
+# Idempotent: every change is guarded by a check, so a second run reports changed=0.
+# (The gluster.gluster collection is unmaintained, so this uses ansible.builtin.command + explicit checks.)
+
+- name: Wait for glusterd on every node
+  hosts: gluster
+  gather_facts: false
+  tasks:
+    - name: glusterd answers
+      ansible.builtin.command: gluster --mode=script pool list
+      register: pool_list
+      retries: 30
+      delay: 2
+      until: pool_list.rc == 0
+      changed_when: false
+
+- name: Form the pool and the volume (run from the first node)
+  hosts: gluster[0]
+  gather_facts: false
+  vars:
+    peers: "{{ groups['gluster'][1:] }}"
+    bricks: "{{ groups['gluster'] | map('regex_replace', '$', ':' ~ gluster_brick_root ~ '/' ~ gluster_volume) | join(' ') }}"
+  tasks:
+    - name: Read current pool
+      ansible.builtin.command: gluster --mode=script pool list
+      register: pool
+      changed_when: false
+
+    - name: Probe peers not yet in the pool
+      ansible.builtin.command: gluster --mode=script peer probe {{ item }}
+      loop: "{{ peers }}"
+      when: item not in pool.stdout
+      register: probe
+      changed_when: "'success' in probe.stdout"
+
+    - name: Wait until every peer is connected
+      ansible.builtin.shell: set -o pipefail && gluster --mode=script pool list | grep -c Connected
+      args: { executable: /bin/bash }
+      register: connected
+      retries: 30
+      delay: 2
+      until: connected.stdout | int == groups['gluster'] | length
+      changed_when: false
+
+    - name: Does the volume exist?
+      ansible.builtin.command: gluster --mode=script volume info {{ gluster_volume }}
+      register: vol_info
+      failed_when: false
+      changed_when: false
+
+    - name: Create the replicated volume
+      ansible.builtin.command: >-
+        gluster --mode=script volume create {{ gluster_volume }}
+        replica {{ gluster_replica }} {{ bricks }} force
+      when: vol_info.rc != 0
+      changed_when: true
+
+    - name: Read current option values
+      ansible.builtin.command: gluster --mode=script volume get {{ gluster_volume }} {{ item.key }}
+      loop: "{{ gluster_volume_options | dict2items }}"
+      register: current_opts
+      changed_when: false
+
+    - name: Apply options that differ
+      ansible.builtin.command: gluster --mode=script volume set {{ gluster_volume }} {{ item.item.key }} {{ item.item.value }}
+      loop: "{{ current_opts.results }}"
+      loop_control: { label: "{{ item.item.key }}={{ item.item.value }}" }
+      when: (item.stdout_lines | last).split() | last != item.item.value
+      changed_when: true
+
+    - name: Read volume status
+      ansible.builtin.command: gluster --mode=script volume info {{ gluster_volume }}
+      register: vol_state
+      changed_when: false
+
+    - name: Start the volume
+      ansible.builtin.command: gluster --mode=script volume start {{ gluster_volume }}
+      when: "'Status: Started' not in vol_state.stdout"
+      changed_when: true

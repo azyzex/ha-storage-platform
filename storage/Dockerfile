@@ -2,7 +2,7 @@
 # so client and server versions match.
 FROM ubuntu:24.04
 RUN apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends glusterfs-server procps iproute2 \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends glusterfs-server procps iproute2 python3 \
  && rm -rf /var/lib/apt/lists/*
 # Bricks live under /bricks (a Docker volume on the host's ext4, which supports the trusted.* xattrs Gluster needs).
 VOLUME ["/bricks", "/var/lib/glusterd"]

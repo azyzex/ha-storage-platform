@@ -1,0 +1,9 @@
+# Desired state of the GlusterFS cluster. Change a value here, re-run the playbook, only the difference is applied.
+gluster_volume: files
+gluster_replica: 3
+gluster_brick_root: /bricks
+gluster_volume_options:
+  network.ping-timeout: "5"            # detect a dead node in 5 s instead of 42 s
+  cluster.self-heal-daemon: "on"       # heal returning bricks automatically
+  cluster.quorum-type: "auto"          # writes need a majority (2 of 3): prevents split-brain
+  performance.client-io-threads: "on"
