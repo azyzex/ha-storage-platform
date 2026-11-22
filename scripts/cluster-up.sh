@@ -32,9 +32,10 @@ for node in $(k3d node list -o json | jq -r '.[] | select(.role=="server" or .ro
 done
 ok "all nodes share the GlusterFS volume"
 
-log "Building and importing the API image"
+log "Building and importing the images"
 docker build -q -t ha-storage/api:local "$REPO_ROOT/app/api"
-k3d image import ha-storage/api:local -c "$CLUSTER"
+docker build -q -t ha-storage/frontend:local "$REPO_ROOT/app/frontend"
+k3d image import ha-storage/api:local ha-storage/frontend:local -c "$CLUSTER"
 
 log "Deploying"
 kubectl apply -f "$REPO_ROOT/k8s/namespace.yaml"
@@ -44,6 +45,7 @@ fi
 kubectl apply -k "$REPO_ROOT/k8s"
 kubectl -n ha rollout status statefulset/postgres --timeout=180s
 kubectl -n ha rollout status deployment/api --timeout=180s
+kubectl -n ha rollout status deployment/frontend --timeout=180s
 
 log "Waiting for the API through the ingress"
 retry 60 2 curl -fsS http://localhost:8080/api/readyz >/dev/null || {

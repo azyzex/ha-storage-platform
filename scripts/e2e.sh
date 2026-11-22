@@ -16,6 +16,11 @@ download_sha() {  # download_sha <id> -> sha256 of the downloaded bytes
   curl -fsS "$API/files/$1" -o "$WORK/dl" && sha256sum "$WORK/dl" | cut -d' ' -f1
 }
 
+log "0. Web page served through the ingress"
+curl -fsS http://localhost:8080/ | grep -q '<div id="root">' || fail "frontend not served"
+curl -fsSI http://localhost:8080/ | grep -qi 'x-frame-options: deny' || fail "security headers missing"
+note "Frontend" "served by nginx (non-root) with security headers"
+
 log "1. Upload through the ingress"
 head -c 10M /dev/urandom > "$WORK/a.bin"
 meta=$(upload "$WORK/a.bin")
