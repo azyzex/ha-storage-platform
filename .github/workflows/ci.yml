@@ -1,0 +1,24 @@
+name: ci
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  storage-smoke:
+    name: Slice 0 — GlusterFS replica-3 survives a node failure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start 3-node GlusterFS cluster
+        run: bash scripts/storage-up.sh
+      - name: Mount volume on the host (FUSE)
+        run: bash scripts/storage-mount.sh
+      - name: Failover + self-heal test
+        run: bash scripts/storage-smoke.sh
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          for n in gluster-1 gluster-2 gluster-3; do echo "--- $n"; docker logs --tail 80 $n || true; done
+          ls -la /dev/fuse || true
+          sudo dmesg | tail -40 || true

@@ -1,0 +1,30 @@
+# Three GlusterFS nodes as containers. Fixed IPs so the host can resolve them for the FUSE mount.
+name: storage
+x-node: &node
+  build: .
+  image: ha-storage/gluster-node:local
+  privileged: true          # needed for the trusted.* extended attributes Gluster writes on bricks
+  restart: unless-stopped
+services:
+  gluster-1:
+    <<: *node
+    hostname: gluster-1
+    container_name: gluster-1
+    volumes: [brick1:/bricks, state1:/var/lib/glusterd]
+    networks: { gluster: { ipv4_address: 172.28.0.11 } }
+  gluster-2:
+    <<: *node
+    hostname: gluster-2
+    container_name: gluster-2
+    volumes: [brick2:/bricks, state2:/var/lib/glusterd]
+    networks: { gluster: { ipv4_address: 172.28.0.12 } }
+  gluster-3:
+    <<: *node
+    hostname: gluster-3
+    container_name: gluster-3
+    volumes: [brick3:/bricks, state3:/var/lib/glusterd]
+    networks: { gluster: { ipv4_address: 172.28.0.13 } }
+networks:
+  gluster:
+    ipam: { config: [ { subnet: 172.28.0.0/24 } ] }
+volumes: { brick1: {}, brick2: {}, brick3: {}, state1: {}, state2: {}, state3: {} }
