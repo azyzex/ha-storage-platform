@@ -3,7 +3,7 @@
 Read this first when resuming. Newest entries at the top.
 
 ## Current state
-- Slices 0–8 ✅ (all measured in CI) · Extras (Argo CD, Falco) being validated · Slice 9 (Codespaces) to test live
+- Slices 0–8 ✅ + Argo CD ✅ + Falco ✅ (all in CI) · Slice 9 (Codespaces) being tested live
 - Repo: local `C:\Users\AZYZ\Desktop\projects\ha-storage-platform` → GitHub `azyzex/ha-storage-platform` (private)
 - Runs on: GitHub Actions (tests). Codespaces later (needs `gh auth refresh -h github.com -s codespace`, a browser step Aziz must do).
 - Aziz's PC has no Docker/WSL → nothing runs locally.
@@ -15,6 +15,7 @@ Read this first when resuming. Newest entries at the top.
 4. Confirm real months for the pentest + DiffServ projects on the CV (currently estimates: Oct 2026 / Nov 2026).
 
 ## Log
+- 2026-11-22 — **ALL GREEN (run 45074247798)** incl. extras. Load: 12,431 req, 0 failed, p95 0.67 s, HPA 2→6, node killed mid-run (better than before: the exporter no longer runs the expensive `heal info` every 5 s). AIOps: 5→226 ms flagged in 42 s, static alert silent. Argo CD: NetworkPolicy restored 2 s, scale reverted 3 s, security setting 4 s. Falco: shell detected instantly, pod named.
 - 2026-11-22 — **Slices 5b, 6, 7, 8 PASSED**: Loki+Alloy (131 log lines found); backup 11 s / restore after accidental delete 6 s; AIOps: 40 ms delay on one node → writes 10→294 ms, detector flagged in 49 s (z=74) while the 500 ms static alert stayed silent, cleared 66 s after; load: 7,436 req, 0.01% failed, p95 1.26 s, HPA 2→6 with gluster-3 killed 25 s mid-run.
 - 2026-11-22 — Bugs found by the tests: disk pressure evicting pods (CI now frees ~25 GB + lab eviction thresholds); backup NetworkPolicy created 1 s before the job (moved with the other policies + pg_isready wait); Garage 2.x layout check; `heal info` too slow after thousands of writes → `heal-count` in tests and exporter.
 - 2026-11-22 — Added Argo CD (GitOps self-heal test) and Falco (custom rule test) in a separate CI job; Codespaces devcontainer + Makefile + demo script.

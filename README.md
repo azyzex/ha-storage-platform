@@ -45,9 +45,11 @@ flowchart TB
 | PostgreSQL pod deleted | metadata intact, API reconnects by itself |
 | Random pod tries to reach PostgreSQL | **blocked** by NetworkPolicy; API-labelled pod allowed |
 | Node killed → alert | `GlusterNodeDown` fires in **~36-48 s**, reaches Alertmanager, resolves ~15 s after recovery |
-| Accidental delete (gone from all 3 replicas) | **restored from backup in 6 s** (backup took 11 s), checksum identical |
-| Gray failure: one node slowed by 40 ms, still alive | writes 10 → 294 ms; **AI detector flagged it in 49 s** and named the cause (write latency); the static 500 ms alert **did not fire** |
-| 40 concurrent users + a storage node killed for 25 s | **7,436 requests, 0.01% failed, p95 1.26 s**; autoscaler **2 → 6 API pods** |
+| Accidental delete (gone from all 3 replicas) | **restored from backup in 6 s**, checksum identical |
+| Gray failure: one node slowed by 40 ms, still alive | writes 5 → 226 ms; **AI detector flagged it in ~45 s** and named the cause (write latency); the static 500 ms alert **did not fire** |
+| 40 concurrent users + a storage node killed for 25 s | **12,431 requests, 0 failed, p95 0.67 s**; autoscaler **2 → 6 API pods** |
+| Manual changes to the cluster (deleted NetworkPolicy, scaled Deployment, disabled read-only filesystem) | **reverted by Argo CD in 2-4 s** |
+| Shell opened inside an API container | **detected by Falco** instantly, pod identified |
 | Trivy / gitleaks gates | caught real CVEs (CRITICAL in nginx base image, HIGH in python-multipart / starlette), fixed before merge; no secrets in history |
 
 *Lab scale: all nodes are containers on one cloud machine. It demonstrates replication, failover, self-healing and the operations around them, not a multi-region production system.*
