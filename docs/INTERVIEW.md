@@ -77,9 +77,85 @@ Lint (ruff) + security scan (Bandit), API tests against a real Postgres, the Glu
 
 ---
 
-## Questions to expect on later slices (prepare as they get built)
-- How do Prometheus and Grafana get the metrics? What alert fires when a node dies?
-- What does Trivy check vs gitleaks vs Bandit?
-- How do you restore from a backup and how did you test it?
-- How does the anomaly detector decide something is abnormal (Isolation Forest)?
-- How does the HPA decide to add pods?
+## Security (DevSecOps) — slice 4
+
+**What do Trivy, gitleaks and Bandit each check?**
+- **gitleaks**: secrets (passwords, keys, tokens) anywhere in the Git history.
+- **Bandit**: security bugs in my Python code (e.g. shell injection, unsafe XML parsing).
+- **Trivy**: known vulnerabilities (CVEs) in the container images' packages, AND risky settings in the Kubernetes files (e.g. containers running as root).
+
+**Did it catch anything real?**
+Yes. Trivy blocked the build on HIGH CVEs in `python-multipart` 0.0.20 (one allowed writing arbitrary files) and `starlette`, and on CRITICAL CVEs in the nginx base image. I upgraded the packages, moved to a newer nginx and added `apk upgrade` at build time. That's the point of a gate: it stopped vulnerable images before deployment.
+
+**What are NetworkPolicies?**
+Firewall rules inside Kubernetes. Default: deny all incoming traffic. Then I allow only what's needed: Traefik → web pods, API → Postgres, backup job → Postgres, Prometheus → API metrics. The test proves a random pod can't reach the database while a pod labelled as the API can.
+
+**How are secrets handled?**
+Generated at deploy time (`openssl rand`) into Kubernetes Secrets, never written in Git (gitleaks proves it). Pods read them as environment variables.
+
+**What else is hardened?**
+Every container runs as non-root, with a read-only filesystem, all Linux capabilities dropped and no privilege escalation, including Postgres (uid 70).
+
+---
+
+## Monitoring — slice 5
+
+**How does Prometheus get the metrics?**
+It "scrapes" HTTP endpoints every 10-15 s: the API's `/metrics` (found through a ServiceMonitor), and my GlusterFS exporter on each storage node.
+
+**Why did you write your own GlusterFS exporter?**
+The official one (gluster-prometheus) is unmaintained. Mine is ~100 lines of Python: it runs the gluster CLI on each node and exposes brick status, connected peers, files waiting for heal and free space.
+
+**What happens when a storage node dies?**
+Prometheus can't reach its exporter, so `up == 0`; the `GlusterNodeDown` rule fires after 20 s of that. Measured end to end: ~36-48 s from the node stopping to the alert firing (scrape interval + evaluation + the 20 s "for"). It reaches Alertmanager, which can route it to email/Slack/Telegram, and it resolves ~15 s after the node is back.
+
+**What is the storage probe?**
+Each API pod writes, fsyncs and reads a small file on GlusterFS every 5 s and records the time. That's storage latency as the application feels it (measured ~40-76 ms per replicated write+fsync).
+
+**Logs?**
+Loki stores them, Grafana Alloy collects them from every pod through the Kubernetes API (Alloy replaced Promtail, which is end-of-life). Logs and metrics are in the same Grafana.
+
+---
+
+## Backups — slice 6
+
+**Why backups if you already have 3 replicas?**
+Replication protects against a dead node, not a mistake: a delete or a corruption is copied to all 3 replicas instantly. The drill proves it: delete a file → gone from all 3 bricks → restored from the backup with the same checksum.
+
+**How does the backup work?**
+A nightly Kubernetes CronJob: an init container runs `pg_dump`, then restic backs up the dump plus every file (read-only mount), encrypted, to Garage (S3-compatible). Retention: 7 daily, 4 weekly.
+
+**Why Garage and not MinIO?**
+MinIO stopped publishing its community container images in 2025. Running an unmaintained image would contradict the security gates, so I chose Garage, a maintained, lightweight S3-compatible store.
+
+**RPO / RTO?**
+RPO (how much data you can lose) = up to 24 h with a nightly backup; RTO (how long to restore) = measured by the drill (seconds for this data size). For a real system you'd back up more often and test restores regularly — which the drill does in CI on every push.
+
+---
+
+## AIOps — slice 7
+
+**What does the anomaly detector do?**
+It reads storage signals from Prometheus every 15 s (write/read latency, heal backlog, offline bricks), learns what normal looks like for this system, and flags samples that don't fit, using an Isolation Forest (scikit-learn).
+
+**Why not just a threshold?**
+Thresholds miss "gray failures": a node that's slow but alive. Example from the test: one node gets 40 ms of network delay, every replicated write gets several times slower, but stays under the 500 ms static alert. The detector flags it and says which signal moved (z-score of write latency).
+
+**What is an Isolation Forest, simply?**
+It builds many random trees that split the data. Normal points need many splits to isolate; unusual points are isolated quickly. Fewer splits = more anomalous.
+
+**Limits (say them before they ask)?**
+It learns only from what it saw since it started; a real version would train on weeks of history and account for daily patterns. I also require a real shift in at least one signal (z-score > 4) so it doesn't fire on noise.
+
+---
+
+## Load + autoscaling — slice 8
+
+**What does the load test show?**
+k6 ramps to 40 users uploading, listing and downloading files. The HorizontalPodAutoscaler adds API pods when CPU passes 60%. In the middle of the load a storage node is killed for 25 s, and the run must still keep failures under 1% and p95 under 2 s.
+
+**How does the HPA decide?**
+metrics-server reports each pod's CPU; the HPA compares the average to the target (60% of the CPU request) and computes how many pods are needed, between 2 and 6. Scale-down waits 2 minutes to avoid flapping.
+
+**What is preStop for?**
+When a pod is deleted it keeps serving 5 s while it's removed from the Service and Traefik. Without it, 2 of 128 requests failed during a pod kill; with it, 0.

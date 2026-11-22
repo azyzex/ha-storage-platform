@@ -54,7 +54,7 @@ spec:
           env:
             - name: PGPASSWORD
               valueFrom: { secretKeyRef: { name: postgres-credentials, key: password } }
-          command: ["sh", "-c", "psql -v ON_ERROR_STOP=1 -q -h postgres -U storage storage < /restore/dump/storage.sql && echo database restored"]
+          command: ["sh", "-c", "for i in $(seq 1 30); do pg_isready -q -h postgres -U storage && break; sleep 2; done; psql -v ON_ERROR_STOP=1 -q -h postgres -U storage storage < /restore/dump/storage.sql && echo database restored"]
           resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { memory: 256Mi } }
           volumeMounts: [{ name: restore, mountPath: /restore, readOnly: true }]
       volumes:
