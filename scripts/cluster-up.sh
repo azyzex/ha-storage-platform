@@ -14,11 +14,8 @@ if ! command -v k3d >/dev/null; then
 fi
 command -v kubectl >/dev/null || fail "kubectl not installed"
 
-# k3s stacks containerd's overlayfs snapshotter on the node's own root filesystem. Where that root is
-# itself an overlay that can't host an overlay upper dir (Codespaces: Docker 29 + containerd image store),
-# containers silently start with an empty filesystem ("executable file not found"). The "native"
-# snapshotter copies layers instead: slower, more disk, works everywhere. Override with K3S_SNAPSHOTTER.
-SNAPSHOTTER=${K3S_SNAPSHOTTER:-$([ "${CODESPACES:-}" = "true" ] && echo native || echo overlayfs)}
+# containerd snapshotter used by k3s (override with K3S_SNAPSHOTTER, e.g. "native" on exotic filesystems).
+SNAPSHOTTER=${K3S_SNAPSHOTTER:-overlayfs}
 
 if ! k3d cluster list "$CLUSTER" >/dev/null 2>&1; then
   log "Creating k3d cluster '$CLUSTER' (1 server + 2 agents, snapshotter: $SNAPSHOTTER)"
