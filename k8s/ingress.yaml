@@ -1,9 +1,13 @@
 # Traefik (bundled with k3s) routes /api to the API and everything else to the frontend.
+# Two Ingresses with explicit router priorities: never rely on implicit rule ordering, because a catch-all "/"
+# winning over "/api" silently sends API calls to nginx (which answers every path with index.html).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: web
+  name: api
   namespace: ha
+  annotations:
+    traefik.ingress.kubernetes.io/router.priority: "100"
 spec:
   ingressClassName: traefik
   rules:
@@ -12,6 +16,19 @@ spec:
           - path: /api
             pathType: Prefix
             backend: { service: { name: api, port: { number: 8000 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: ha
+  annotations:
+    traefik.ingress.kubernetes.io/router.priority: "1"
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
           - path: /
             pathType: Prefix
             backend: { service: { name: frontend, port: { number: 8080 } } }

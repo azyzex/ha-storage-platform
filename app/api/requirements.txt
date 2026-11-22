@@ -1,6 +1,9 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-python-multipart==0.0.20
-psycopg[binary]==3.2.3
-psycopg-pool==3.2.4
-prometheus-fastapi-instrumentator==7.0.2
+# Pinned. Bumped 2026-11-22 after Trivy flagged HIGH CVEs in python-multipart 0.0.20
+# (arbitrary file write, DoS) and starlette 0.41.3 (DoS, SSRF). Starlette pinned explicitly.
+fastapi==0.165.0
+starlette==1.10.0
+uvicorn[standard]==0.54.0
+python-multipart==0.0.34
+psycopg[binary]==3.3.9
+psycopg-pool==3.3.3
+prometheus-fastapi-instrumentator==8.1.0

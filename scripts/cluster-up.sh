@@ -48,7 +48,11 @@ kubectl -n ha rollout status deployment/api --timeout=180s
 kubectl -n ha rollout status deployment/frontend --timeout=180s
 
 log "Waiting for the API through the ingress"
-retry 60 2 curl -fsS http://localhost:8080/api/readyz >/dev/null || {
-  kubectl -n ha get pods -o wide; kubectl -n ha logs deploy/api --tail=50; fail "API not reachable"; }
+# Check the body, not just "200 OK": a misrouted request can get the frontend's index.html with a 200.
+api_ok() { curl -fsS http://localhost:8080/api/readyz | jq -e '.status == "ready"' >/dev/null 2>&1; }
+retry 60 2 api_ok || {
+  echo "--- response for /api/readyz:"; curl -si http://localhost:8080/api/readyz | head -15
+  kubectl get ingress -A -o yaml; kubectl -n kube-system logs deploy/traefik --tail=60
+  kubectl -n ha get pods -o wide; kubectl -n ha logs deploy/api --tail=50; fail "API not reachable through the ingress"; }
 kubectl -n ha get pods -o wide
 ok "platform up: http://localhost:8080/api"
