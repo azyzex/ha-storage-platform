@@ -14,8 +14,14 @@ if ! command -v k3d >/dev/null; then
 fi
 command -v kubectl >/dev/null || fail "kubectl not installed"
 
+# k3s stacks containerd's overlayfs snapshotter on the node's own root filesystem. Where that root is
+# itself an overlay that can't host an overlay upper dir (Codespaces: Docker 29 + containerd image store),
+# containers silently start with an empty filesystem ("executable file not found"). The "native"
+# snapshotter copies layers instead: slower, more disk, works everywhere. Override with K3S_SNAPSHOTTER.
+SNAPSHOTTER=${K3S_SNAPSHOTTER:-$([ "${CODESPACES:-}" = "true" ] && echo native || echo overlayfs)}
+
 if ! k3d cluster list "$CLUSTER" >/dev/null 2>&1; then
-  log "Creating k3d cluster '$CLUSTER' (1 server + 2 agents)"
+  log "Creating k3d cluster '$CLUSTER' (1 server + 2 agents, snapshotter: $SNAPSHOTTER)"
   # The 3 k3d nodes share ONE host disk. Default kubelet eviction (nodefs/imagefs < 10-15% free) evicts pods
   # on a busy single machine (CI runner, Codespace) long before space really runs out, so set explicit,
   # lab-appropriate thresholds.
@@ -25,6 +31,7 @@ if ! k3d cluster list "$CLUSTER" >/dev/null 2>&1; then
     --volume "$MOUNT:$MOUNT@all" \
     --k3s-arg "--kubelet-arg=eviction-hard=memory.available<200Mi,nodefs.available<3%,imagefs.available<3%@server:*;agent:*" \
     --k3s-arg "--kubelet-arg=eviction-minimum-reclaim=nodefs.available=500Mi,imagefs.available=500Mi@server:*;agent:*" \
+    --k3s-arg "--snapshotter=$SNAPSHOTTER@server:*;agent:*" \
     --wait --timeout 180s
 fi
 kubectl config use-context "k3d-$CLUSTER" >/dev/null
