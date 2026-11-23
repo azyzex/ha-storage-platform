@@ -21,6 +21,18 @@ heal_pending_zero() {
   [ "$(grep -c 'Number of entries: 0' <<<"$out")" -eq 3 ]
 }
 wait_healed() {
-  timeout 30 docker exec gluster-1 gluster --mode=script volume heal "$VOLUME" >/dev/null 2>&1 || true  # nudge
-  retry 120 3 heal_pending_zero
+  # Re-trigger the index heal every ~30 s: a single trigger can be lost on a busy host, and the daemon's own
+  # periodic crawl only runs every 10 minutes (cluster.heal-timeout).
+  local tries=${1:-200} t
+  for ((t=1; t<=tries; t++)); do
+    if (( t % 10 == 1 )); then
+      timeout 30 docker exec gluster-1 gluster --mode=script volume heal "$VOLUME" >/dev/null 2>&1 || true
+    fi
+    heal_pending_zero && return 0
+    sleep 3
+  done
+  echo "--- still pending when giving up:"
+  timeout 30 docker exec gluster-1 gluster --mode=script volume heal "$VOLUME" statistics heal-count 2>&1 | grep -E "Brick|entries" || true
+  timeout 30 docker exec gluster-1 gluster --mode=script volume status "$VOLUME" 2>&1 | grep -E "Brick|Self-heal" || true
+  return 1
 }
