@@ -159,3 +159,11 @@ metrics-server reports each pod's CPU; the HPA compares the average to the targe
 
 **What is preStop for?**
 When a pod is deleted it keeps serving 5 s while it's removed from the Service and Traefik. Without it, 2 of 128 requests failed during a pod kill; with it, 0.
+
+## Bugs the tests found (good interview stories)
+
+**"Your dashboard said 3 of 3 bricks online while a node was down. Why?"**
+`gluster volume status` on the surviving nodes doesn't report a disconnected peer's brick as offline: it just leaves it out. My exporter only updated bricks it saw, so the dead brick kept its last value (1). Fix: take the configured brick list from `volume info` and mark every brick not reported online as 0. Lesson: a metric that is never updated is not "fine", it is stale. The test now fails if the brick alert doesn't fire.
+
+**"After a node restart, how do you know it really rejoined?"**
+I learned this the hard way: under load + chaos, the restarted node's container and self-heal daemon were up, but its brick process was not (Online = N), so 2,000+ files could not heal. The system still served everything from the other two copies, so users saw nothing; I was silently down to 2 copies. Cause: the brick's PID file survived the container restart, PIDs restart from small numbers in a new container, and the old PID matched another live process, so glusterd thought the brick was running. Fix: clear stale PID files at start, and force-start a brick still offline after 25 s (logged). I found it because the test waits for the heal backlog to reach 0, not just "container up".

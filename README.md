@@ -47,7 +47,7 @@ flowchart TB
 | Node killed → alert | `GlusterNodeDown` fires in **~36-48 s**, reaches Alertmanager, resolves ~15 s after recovery |
 | Accidental delete (gone from all 3 replicas) | **restored from backup in 6 s**, checksum identical |
 | Gray failure: one node slowed by 40 ms, still alive | writes 5 → 226 ms; **AI detector flagged it in ~45 s** and named the cause (write latency); the static 500 ms alert **did not fire** |
-| 40 concurrent users + a storage node killed for 25 s | **12,431 requests, 0 failed, p95 0.67 s**; autoscaler **2 → 6 API pods** |
+| 40 concurrent users + a storage node killed for 25 s | **11,482 requests, 0.01 % failed (~1 request), p95 0.71 s**; autoscaler **2 → 6 API pods**; the restarted node rejoins and fully heals |
 | Manual changes to the cluster (deleted NetworkPolicy, scaled Deployment, disabled read-only filesystem) | **reverted by Argo CD in 2-4 s** |
 | Shell opened inside an API container | **detected by Falco** instantly, pod identified |
 | Trivy / gitleaks gates | caught real CVEs (CRITICAL in nginx base image, HIGH in python-multipart / starlette), fixed before merge; no secrets in history |
